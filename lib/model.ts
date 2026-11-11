@@ -1,3 +1,4 @@
+import { sourcesSchema } from './source-input.ts';
 import { z } from 'zod';
 const text = z.string().max(12000);
 const short = z.string().max(250);
@@ -18,10 +19,10 @@ export const checkSchema=checkBase.superRefine((v,ctx)=>{
  if(v.lastChecked&&v.nextCheck&&v.nextCheck<v.lastChecked)ctx.addIssue({code:z.ZodIssueCode.custom,message:'Hercontrole moet na de controledatum liggen'});
 });
 export const reportSchema = z.object({id,quarter:z.string().regex(/^\d{4}-Q[1-4]$/),date,contribution:text,change:text,benefit:text,decision:text,choice:z.enum(['Nog bepalen','Doorgaan','Aanpassen','Wachten','Stoppen'])});
-export const dossierSchema=z.object({id,title:short.min(1),code:short,summary:text,priority:z.enum(['Nog bepalen','Prioriteit','Volgen']),stage:z.enum(['Verkennen','Afstemmen','Uitvoeren','Evalueren','Afgerond']),owner:short,problem:text,audience:text,goal:text,contribution:text,mandate:text,partners:text,indicators:z.array(indicatorSchema).max(100),actions:z.array(actionSchema).max(300),consultations:z.array(consultationSchema).max(200),evidence:z.array(evidenceSchema).max(500),checks:z.array(checkSchema).max(100),reports:z.array(reportSchema).max(100)});
+export const dossierSchema=z.object({id,title:short.min(1),code:short,summary:text,priority:z.enum(['Nog bepalen','Prioriteit','Volgen']),stage:z.enum(['Verkennen','Afstemmen','Uitvoeren','Evalueren','Afgerond']),owner:short,problem:text,audience:text,goal:text,contribution:text,mandate:text,partners:text,indicators:z.array(indicatorSchema).max(100),actions:z.array(actionSchema).max(300),consultations:z.array(consultationSchema).max(200),evidence:z.array(evidenceSchema).max(500),checks:z.array(checkSchema).max(100),reports:z.array(reportSchema).max(100),sources:sourcesSchema.default([])});
 export const workspaceSchema=z.object({version:z.literal(1),dossiers:z.array(dossierSchema).max(100)}).superRefine((w,ctx)=>{
  const seen=new Set<string>(); const add=(v:string)=>{if(seen.has(v))ctx.addIssue({code:z.ZodIssueCode.custom,message:'Dubbele identificatie in gegevens'});seen.add(v)};
- for(const d of w.dossiers){add(d.id);for(const key of ['indicators','actions','consultations','evidence','checks','reports'] as const)for(const x of d[key]){add(x.id);if('measurements' in x)for(const m of x.measurements)add(m.id)}}
+ for(const d of w.dossiers){add(d.id);for(const source of d.sources??[])add(source.id);for(const key of ['indicators','actions','consultations','evidence','checks','reports'] as const)for(const x of d[key]){add(x.id);if('measurements' in x)for(const m of x.measurements)add(m.id)}}
 });
 export type Workspace=z.infer<typeof workspaceSchema>; export type Dossier=z.infer<typeof dossierSchema>; export type Indicator=z.infer<typeof indicatorSchema>;
 export const uid=()=>crypto.randomUUID();
@@ -32,7 +33,7 @@ export function progress(i:Indicator,until?:string){const m=latest(i,until);if(!
 export function validity(c:Dossier['checks'][number],now=today()){if(c.outcome==='Aanpassen')return 'Aanpassen';if(c.outcome==='Onzeker')return 'Onzeker';if(!c.lastChecked||c.outcome==='Nog controleren')return 'Nog controleren';if(c.nextCheck&&c.nextCheck<now)return 'Hercontrole nodig';return c.nextCheck?'Actueel vastgelegd':'Termijn ontbreekt'}
 export function coverage(d:Dossier){return [!!d.problem.trim(),!!d.audience.trim(),!!d.goal.trim(),!!d.contribution.trim(),!!d.mandate.trim(),d.indicators.some(i=>i.baseline!==null&&!!i.baselineDate&&i.target!==null&&!!i.due&&!!i.definition&&!!i.source&&!!i.owner),d.consultations.length>0,d.evidence.length>0]}
 export const coverageLabels=['Ledenprobleem','Doelgroep','Gewenste verandering','Eigen bijdrage','Mandaat','Meetafspraak','Raadpleging','Bewijs'];
-const mk=(id:string,code:string,title:string,summary:string,goal:string,partners:string,checks:Dossier['checks'])=>({id,code,title,summary,goal,partners,priority:'Nog bepalen',stage:'Verkennen',owner:'Marijn',problem:'',audience:'',contribution:'',mandate:'',indicators:[],actions:[],consultations:[],evidence:[],checks,reports:[]}) as Dossier;
+const mk=(id:string,code:string,title:string,summary:string,goal:string,partners:string,checks:Dossier['checks'])=>({id,code,title,summary,goal,partners,priority:'Nog bepalen',stage:'Verkennen',owner:'Marijn',problem:'',audience:'',contribution:'',mandate:'',indicators:[],actions:[],consultations:[],evidence:[],checks,reports:[],sources:[]}) as Dossier;
 const ck=(id:string,title:string,url:string)=>({id,title,url,lastChecked:'',nextCheck:'',outcome:'Nog controleren',note:''}) as Dossier['checks'][number];
 export function initialWorkspace():Workspace{return {version:1,dossiers:[
  mk('sto','01','Sterk Techniekonderwijs','Van techniekoriëntatie naar een passende vervolgopleiding.','Voorstel: verbeter de aansluiting tussen technisch vmbo, vervolgonderwijs en installatiebedrijven.','STO-regio’s, mbo, Techkwadraat, lidbedrijven en Wij Techniek',[ck('sto-1','STO regeling en regionale plannen','https://www.dus-i.nl/subsidies/voortgezet-onderwijs/sterk-techniekonderwijs-2025'),ck('sto-2','Samenhang met Techkwadraat','https://www.dus-i.nl/subsidies/primair-onderwijs/techkwadraat')]),

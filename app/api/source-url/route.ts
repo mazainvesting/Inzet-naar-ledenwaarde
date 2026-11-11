@@ -1,0 +1,20 @@
+import {principal,rateLimit} from '../../../lib/auth';
+import {parseSourceUrl,readableUrl,htmlToSource,readLimited} from '../../../lib/source-url';
+export const dynamic='force-dynamic';
+const reply=(value:unknown,status=200)=>Response.json(value,{status,headers:{'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff'}});
+export async function POST(req:Request){
+ if(!await principal(req))return reply({error:'Meld je aan om een bron in te lezen.'},401);
+ if(req.headers.get('origin')!==new URL(req.url).origin)return reply({error:'Ongeldig verzoek.'},403);
+ if(await rateLimit(req,'source-url'))return reply({error:'Te veel aanvragen. Wacht maximaal 15 minuten en probeer opnieuw.'},429);
+ try{
+ const raw=await req.text();if(raw.length>2500)return reply({error:'Ongeldig verzoek.'},400);const data=JSON.parse(raw);if(typeof data.url!=='string')return reply({error:'Vul een URL in.'},400);
+ let url=parseSourceUrl(data.url).href;if(!readableUrl(url))return reply({error:'Deze website wordt niet automatisch opgehaald. Je kunt de URL wel bewaren en tekst, een bestand of een eigen beschrijving toevoegen.',manual:true},422);
+ let response:Response|undefined;for(let n=0;n<4;n++){if(!readableUrl(url))return reply({error:'De doorverwijzing gaat naar een website die niet automatisch wordt opgehaald. Voeg de bron handmatig toe.',manual:true},422);response=await fetch(url,{redirect:'manual',signal:AbortSignal.timeout(15000),headers:{Accept:'text/html, application/pdf, text/plain, image/*;q=0.5','User-Agent':'Ledenwaarde-broninvoer/1.0'}});if([301,302,303,307,308].includes(response.status)){const location=response.headers.get('location');await response.body?.cancel();if(!location)throw new Error('Ongeldige doorverwijzing.');url=parseSourceUrl(new URL(location,url).href).href;response=undefined;continue;}break;}
+ if(!response)throw new Error('Te veel doorverwijzingen. Voeg de bron handmatig toe.');if(!response.ok){await response.body?.cancel();return reply({error:'De website gaf geen toegankelijke bron terug (status '+response.status+'). Gebruik de URL met geplakte tekst of een bestand.',manual:true},422);}
+ const type=response.headers.get('content-type')?.split(';')[0].toLowerCase()||'';
+ if(type.startsWith('image/')){await response.body?.cancel();return reply({kind:'image',url,name:decodeURIComponent(new URL(url).pathname.split('/').pop()||'Afbeelding'),text:'',warning:'Dit is een afbeelding. Voeg een eigen beschrijving of gecontroleerde OCR-tekst toe. De tool analyseert het beeld niet.'});}
+ if(type==='application/pdf'||new URL(url).pathname.toLowerCase().endsWith('.pdf')){const bytes=await readLimited(response,10*1024*1024);let binary='';for(let i=0;i<bytes.length;i+=8192)binary+=String.fromCharCode(...bytes.subarray(i,i+8192));return reply({kind:'pdf',url,name:decodeURIComponent(new URL(url).pathname.split('/').pop()||'Webdocument.pdf'),base64:btoa(binary)});}
+ if(type!=='text/html'&&type!=='application/xhtml+xml'&&!type.startsWith('text/')){await response.body?.cancel();return reply({error:'Dit bestandstype wordt niet automatisch uitgelezen. Bewaar de URL en voeg tekst of een ondersteund bestand toe.',manual:true},422);}
+ const text=new TextDecoder().decode(await readLimited(response,2*1024*1024));const parsed=type.includes('html')?htmlToSource(text):{title:decodeURIComponent(new URL(url).pathname.split('/').pop()||'Webtekst'),text};if(!parsed.text.trim())return reply({error:'Geen leesbare tekst. De pagina kan inloggen, JavaScript of OCR vragen. Voeg de inhoud handmatig toe.',manual:true},422);if(parsed.text.length>40000)return reply({error:'Meer dan 40.000 tekens. Plak relevante passages; de inhoud is niet afgekapt.',manual:true},422);return reply({kind:'web',url,name:parsed.title,text:parsed.text,warning:'Automatisch opgehaalde tekst; geen bewijs van betrouwbaarheid of actualiteit. Controleer het origineel. Tabellen, beeld en dynamische inhoud kunnen ontbreken.'});
+ }catch{return reply({error:'De bron kon niet worden opgehaald. Controleer de URL of voeg de inhoud handmatig toe.',manual:true},422);}
+}

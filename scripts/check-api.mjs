@@ -11,6 +11,7 @@ try{
  const post=(url,body,extra={})=>mf.dispatchFetch(root+url,{method:'POST',headers:{...headers,...extra},body:JSON.stringify(body)});
  const put=(body,extra={})=>mf.dispatchFetch(root+'/api/workspace',{method:'PUT',headers:{...headers,...extra},body:JSON.stringify(body)});
  assert.equal((await mf.dispatchFetch(root+'/api/workspace')).status,401);
+ assert.equal((await post('/api/source-url',{url:'https://www.cbs.nl'})).status,401);
  // Forged platform identity is never trusted in independent hosting mode.
  assert.equal((await mf.dispatchFetch(root+'/api/workspace',{headers:{'oai-authenticated-user-id':'forged','oai-authenticated-user-email':'fake@example.test'}})).status,401);
  const st=await (await mf.dispatchFetch(root+'/api/auth/status')).json();assert.equal(st.configured,false);assert.equal(st.canSetup,false);
@@ -21,8 +22,13 @@ try{
  // A forged second account is also rejected by the database constraint.
  await assert.rejects(()=>db.prepare("INSERT INTO account (id, username, password_hash, salt, workspace_user_id, version, created_at) VALUES (2,'x','x','x','x',1,'x')").run());
  const get=async(extra=cookieHeader())=>mf.dispatchFetch(root+'/api/workspace',{headers:extra});assert.equal((await (await get()).json()).revision,0);
+ assert.equal((await post('/api/source-url',{url:'http://127.0.0.1'},cookieHeader())).status,422);
+ assert.equal((await post('/api/source-url',{url:'https://unlisted.example.org'},cookieHeader())).status,422);
+ assert.equal((await post('/api/source-url',{url:'https://www.cbs.nl'},{...cookieHeader(),origin:'https://evil.test'})).status,403);
+ workspace.dossiers[0].sources=[{id:'test-source',name:'Lokale testbron.pdf',type:'pdf',url:'https://example.org/test',date:'2026-11-11',importedAt:'2026-11-11T12:00:00Z',hash:'test-hash',warning:'',pages:[{number:2,text:'Een tekort aan begeleidingscapaciteit bij kleine bedrijven.'}]}];
  workspace.dossiers[0].problem='Lokale test van eigen inlog';const save=await put({workspace,revision:0},cookieHeader());assert.equal(save.status,200,await save.clone().text());assert.equal((await save.json()).revision,1);
  assert.equal((await (await get()).json()).workspace.dossiers[0].problem,'Lokale test van eigen inlog');
+ assert.equal((await (await get()).json()).workspace.dossiers[0].sources[0].pages[0].number,2);
  assert.equal((await put({workspace,revision:0},cookieHeader())).status,409);assert.equal((await put({workspace:{version:3,dossiers:[]},revision:1},cookieHeader())).status,400);
  assert.equal((await post('/api/auth/login',{username:'marijn',password:'wrong-password'})).status,401);
  const login=await post('/api/auth/login',{username:'MARIJN',password:'a-long-test-password'});assert.equal(login.status,200);const oldCookie=cookie;
