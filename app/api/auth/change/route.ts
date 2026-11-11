@@ -1,0 +1,6 @@
+import {eq} from 'drizzle-orm';
+import {getDb} from '../../../../db';
+import {account,sessions} from '../../../../db/schema';
+import {authResponse,readBody,readAccount,ownSession,rateLimit,passwordHash,equalSecret,validateCredentials,credential,makeSession} from '../../../../lib/auth';
+export const dynamic='force-dynamic';
+export async function POST(req:Request){try{const b=await readBody(req);const a=await readAccount();const s=await ownSession(req,a);if(!s||!a)return authResponse({error:'Meld je opnieuw aan.'},401);if(await rateLimit(req,'change'))return authResponse({error:'Te veel pogingen. Probeer later opnieuw.'},429);if(typeof b.currentPassword!=='string'||b.currentPassword.length>256||!equalSecret(await passwordHash(b.currentPassword,a.salt),a.passwordHash))return authResponse({error:'Je huidige wachtwoord klopt niet.'},401);const input=validateCredentials(b);const c=await credential(input.password);await getDb().batch([getDb().update(account).set({...c,username:input.username,version:a.version+1}).where(eq(account.id,1)),getDb().delete(sessions)]);return authResponse({ok:true},200,await makeSession(a.version+1));}catch(e){return authResponse({error:e instanceof Error&&/gebruikersnaam|wachtwoord|verzoek/i.test(e.message)?e.message:'Wijzigen is niet gelukt.'},400)}}
