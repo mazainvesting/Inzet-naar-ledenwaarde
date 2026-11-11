@@ -26,9 +26,13 @@ try{
  assert.equal((await post('/api/source-url',{url:'https://unlisted.example.org'},cookieHeader())).status,422);
  assert.equal((await post('/api/source-url',{url:'https://www.cbs.nl'},{...cookieHeader(),origin:'https://evil.test'})).status,403);
  workspace.dossiers[0].sources=[{id:'test-source',name:'Lokale testbron.pdf',type:'pdf',url:'https://example.org/test',date:'2026-11-11',importedAt:'2026-11-11T12:00:00Z',hash:'test-hash',warning:'',pages:[{number:2,text:'Een tekort aan begeleidingscapaciteit bij kleine bedrijven.'}]}];
+ workspace.questions=[{id:'question-api',text:'Welke informatie heeft het bestuur nog nodig?',kind:'Vraag',dossierId:'sto',status:'Open',origin:'Intern',requester:'Bestuur',owner:'Marijn',priority:'Normaal',due:'2026-12-01',receivedAt:'2026-11-11',answer:'',answeredAt:'',nextStep:'Uitvraag voorbereiden',sourceId:'test-source',sourceName:'Verslag.pdf',sourceUrl:'https://example.org/test',sourcePage:2,sourceQuote:'Welke informatie heeft het bestuur nog nodig?',sourceHash:'test-hash',scanKey:'scan-api',addedAt:'2026-11-11'}];
+ workspace.scanRuns=[{sourceId:'test-source',sourceHash:'test-hash',scannedAt:'2026-11-11',candidatesFound:1}];
  workspace.dossiers[0].problem='Lokale test van eigen inlog';const save=await put({workspace,revision:0},cookieHeader());assert.equal(save.status,200,await save.clone().text());assert.equal((await save.json()).revision,1);
  assert.equal((await (await get()).json()).workspace.dossiers[0].problem,'Lokale test van eigen inlog');
  assert.equal((await (await get()).json()).workspace.dossiers[0].sources[0].pages[0].number,2);
+ assert.equal((await (await get()).json()).workspace.questions[0].requester,'Bestuur');
+ assert.equal((await (await get()).json()).workspace.scanRuns[0].candidatesFound,1);
  assert.equal((await put({workspace,revision:0},cookieHeader())).status,409);assert.equal((await put({workspace:{version:3,dossiers:[]},revision:1},cookieHeader())).status,400);
  assert.equal((await post('/api/auth/login',{username:'marijn',password:'wrong-password'})).status,401);
  const login=await post('/api/auth/login',{username:'MARIJN',password:'a-long-test-password'});assert.equal(login.status,200);const oldCookie=cookie;

@@ -1,0 +1,8 @@
+import {z} from 'zod';
+const day=z.string().refine(v=>v===''||(/^\d{4}-\d{2}-\d{2}$/.test(v)&&!isNaN(Date.parse(v))&&new Date(v).toISOString().slice(0,10)===v),'Gebruik een geldige datum');
+export const questionStatuses=['Te beoordelen','Open','In behandeling','Wacht op antwoord','Beantwoord','Vervallen'] as const;
+export const questionSchema=z.object({id:z.string().min(1).max(100),text:z.string().trim().min(1).max(4000),kind:z.enum(['Vraag','Actiepunt','Signaal']),dossierId:z.string().max(100),status:z.enum(questionStatuses),origin:z.enum(['Intern','Omgevingsveld','Onbekend']),requester:z.string().max(250),owner:z.string().max(250),priority:z.enum(['Hoog','Normaal','Laag']),due:day,receivedAt:day,answer:z.string().max(12000),answeredAt:day,nextStep:z.string().max(4000),sourceId:z.string().max(100),sourceName:z.string().max(250),sourceUrl:z.string().max(2000).refine(v=>!v||/^https?:\/\//i.test(v),'Gebruik een http(s)-link'),sourcePage:z.number().int().positive().nullable(),sourceQuote:z.string().max(4000),sourceHash:z.string().max(100),scanKey:z.string().max(100),addedAt:day}).superRefine((q,ctx)=>{if(q.status==='Beantwoord'&&(!q.answer.trim()||!q.answeredAt))ctx.addIssue({code:z.ZodIssueCode.custom,message:'Leg het antwoord en de datum van beantwoording vast.'});});
+export const scanRunSchema=z.object({sourceId:z.string().min(1).max(100),sourceHash:z.string().max(100),scannedAt:day,candidatesFound:z.number().int().nonnegative().max(300)});
+export type Question=z.infer<typeof questionSchema>;
+export type ScanRun=z.infer<typeof scanRunSchema>;
+export const isOpenQuestion=(q:Question)=>!['Beantwoord','Vervallen'].includes(q.status);

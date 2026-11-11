@@ -1,3 +1,4 @@
+import {questionSchema,scanRunSchema} from './question-model.ts';
 import { sourcesSchema } from './source-input.ts';
 import { z } from 'zod';
 const text = z.string().max(12000);
@@ -20,8 +21,9 @@ export const checkSchema=checkBase.superRefine((v,ctx)=>{
 });
 export const reportSchema = z.object({id,quarter:z.string().regex(/^\d{4}-Q[1-4]$/),date,contribution:text,change:text,benefit:text,decision:text,choice:z.enum(['Nog bepalen','Doorgaan','Aanpassen','Wachten','Stoppen'])});
 export const dossierSchema=z.object({id,title:short.min(1),code:short,summary:text,priority:z.enum(['Nog bepalen','Prioriteit','Volgen']),stage:z.enum(['Verkennen','Afstemmen','Uitvoeren','Evalueren','Afgerond']),owner:short,problem:text,audience:text,goal:text,contribution:text,mandate:text,partners:text,indicators:z.array(indicatorSchema).max(100),actions:z.array(actionSchema).max(300),consultations:z.array(consultationSchema).max(200),evidence:z.array(evidenceSchema).max(500),checks:z.array(checkSchema).max(100),reports:z.array(reportSchema).max(100),sources:sourcesSchema.default([])});
-export const workspaceSchema=z.object({version:z.literal(1),dossiers:z.array(dossierSchema).max(100)}).superRefine((w,ctx)=>{
+export const workspaceSchema=z.object({version:z.literal(1),dossiers:z.array(dossierSchema).max(100),questions:z.array(questionSchema).max(500).default([]),scanRuns:z.array(scanRunSchema).max(800).default([])}).superRefine((w,ctx)=>{
  const seen=new Set<string>(); const add=(v:string)=>{if(seen.has(v))ctx.addIssue({code:z.ZodIssueCode.custom,message:'Dubbele identificatie in gegevens'});seen.add(v)};
+ for(const q of w.questions)add(q.id);
  for(const d of w.dossiers){add(d.id);for(const source of d.sources??[])add(source.id);for(const key of ['indicators','actions','consultations','evidence','checks','reports'] as const)for(const x of d[key]){add(x.id);if('measurements' in x)for(const m of x.measurements)add(m.id)}}
 });
 export type Workspace=z.infer<typeof workspaceSchema>; export type Dossier=z.infer<typeof dossierSchema>; export type Indicator=z.infer<typeof indicatorSchema>;
@@ -35,7 +37,7 @@ export function coverage(d:Dossier){return [!!d.problem.trim(),!!d.audience.trim
 export const coverageLabels=['Ledenprobleem','Doelgroep','Gewenste verandering','Eigen bijdrage','Mandaat','Meetafspraak','Raadpleging','Bewijs'];
 const mk=(id:string,code:string,title:string,summary:string,goal:string,partners:string,checks:Dossier['checks'])=>({id,code,title,summary,goal,partners,priority:'Nog bepalen',stage:'Verkennen',owner:'Marijn',problem:'',audience:'',contribution:'',mandate:'',indicators:[],actions:[],consultations:[],evidence:[],checks,reports:[],sources:[]}) as Dossier;
 const ck=(id:string,title:string,url:string)=>({id,title,url,lastChecked:'',nextCheck:'',outcome:'Nog controleren',note:''}) as Dossier['checks'][number];
-export function initialWorkspace():Workspace{return {version:1,dossiers:[
+export function initialWorkspace():Workspace{return {version:1,questions:[],scanRuns:[],dossiers:[
  mk('sto','01','Sterk Techniekonderwijs','Van techniekoriëntatie naar een passende vervolgopleiding.','Voorstel: verbeter de aansluiting tussen technisch vmbo, vervolgonderwijs en installatiebedrijven.','STO-regio’s, mbo, Techkwadraat, lidbedrijven en Wij Techniek',[ck('sto-1','STO regeling en regionale plannen','https://www.dus-i.nl/subsidies/voortgezet-onderwijs/sterk-techniekonderwijs-2025'),ck('sto-2','Samenhang met Techkwadraat','https://www.dus-i.nl/subsidies/primair-onderwijs/techkwadraat')]),
  mk('infra','02','Opleidingsinfrastructuur','Bereikbare scholing en praktijkvoorzieningen voor bedrijven.','Voorstel: benut bestaande capaciteit en maak samenwerking en financiering uitvoerbaar voor het mkb.','Mbo, opleidingsbedrijven, bedrijfsvakscholen, lidbedrijven en Wij Techniek',[ck('infra-1','Voortgang mbo bekostiging','https://wetgevingskalender.overheid.nl/Regeling/WGK027208'),ck('infra-2','RIF voorwaarden en mogelijkheden','https://www.dus-i.nl/subsidies/middelbaar-beroepsonderwijs/regionaal-investeringsfonds-mbo')]),
  mk('docenten','03','Hybride docenten','Praktijkkennis voor de klas, met een werkbare combinatie.','Voorstel: maak passende routes, begeleiding en arbeidsafspraken toegankelijk.','Scholen, lerarenopleidingen, vakmensen, werkgevers en Wij Techniek',[ck('docent-1','Bevoegdheidsroutes en gastdocentschap','https://www.rijksoverheid.nl/documenten/vraag-en-antwoord/werken-in-het-onderwijs/hoe-word-ik-zijinstromer-in-het-onderwijs'),ck('docent-2','Trajecten en vergoedingsvoorwaarden','https://www.wij-techniek.nl/praktijkbegeleiders/hybride-techniekopleider')]),
